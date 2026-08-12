@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -110,7 +111,7 @@ func TestDeleteNetwork(t *testing.T) {
 	}
 }
 
-func TestAddRegionsToNetwork(t *testing.T) {
+func TestAddRegionToNetwork(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/auth/authorize":
@@ -119,13 +120,20 @@ func TestAddRegionsToNetwork(t *testing.T) {
 			if r.Method != http.MethodPut {
 				t.Errorf("expected PUT, got %s", r.Method)
 			}
+			// The endpoint takes a single region object and declares additionalProperties:false, so assert the
+			// exact shape.
 			body, _ := io.ReadAll(r.Body)
-			var got []CreateRegionInNetworkPayload
+			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			if len(got) != 1 || got[0].HarmonySaseRegionID != "r-2" {
-				t.Errorf("unexpected regions: %+v", got)
+			want := map[string]any{
+				"harmonySaseRegionId": "r-2",
+				"idle":                false,
+				"scaleUnits":          float64(1),
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("body = %s, want %v", body, want)
 			}
 			_, _ = fmt.Fprint(w, `{"statusUrl":"https://example.test/status/add","samplingTime":1}`)
 		default:
@@ -133,18 +141,20 @@ func TestAddRegionsToNetwork(t *testing.T) {
 		}
 	})
 
-	op, err := c.AddRegionsToNetwork(context.Background(), "n1", []CreateRegionInNetworkPayload{
-		{HarmonySaseRegionID: "r-2"},
+	one := int64(1)
+	op, err := c.AddRegionToNetwork(context.Background(), "n1", CreateRegionInNetworkPayload{
+		HarmonySaseRegionID: "r-2",
+		ScaleUnits:          &one,
 	})
 	if err != nil {
-		t.Fatalf("AddRegionsToNetwork: %v", err)
+		t.Fatalf("AddRegionToNetwork: %v", err)
 	}
 	if op.StatusURL == "" {
 		t.Errorf("expected non-empty StatusURL, got %+v", op)
 	}
 }
 
-func TestRemoveRegionsFromNetwork(t *testing.T) {
+func TestRemoveRegionFromNetwork(t *testing.T) {
 	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/auth/authorize":
@@ -153,13 +163,15 @@ func TestRemoveRegionsFromNetwork(t *testing.T) {
 			if r.Method != http.MethodDelete {
 				t.Errorf("expected DELETE, got %s", r.Method)
 			}
+			// One region per call, keyed `regionId` (singular).
 			body, _ := io.ReadAll(r.Body)
-			var got RemoveRegionsPayload
+			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			if len(got.RegionIDs) != 2 || got.RegionIDs[0] != "reg-a" || got.RegionIDs[1] != "reg-b" {
-				t.Errorf("unexpected regionIds: %+v", got.RegionIDs)
+			want := map[string]any{"regionId": "reg-a"}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("body = %s, want %v", body, want)
 			}
 			_, _ = fmt.Fprint(w, `{"statusUrl":"https://example.test/status/rm","samplingTime":1}`)
 		default:
@@ -167,9 +179,9 @@ func TestRemoveRegionsFromNetwork(t *testing.T) {
 		}
 	})
 
-	op, err := c.RemoveRegionsFromNetwork(context.Background(), "n1", []string{"reg-a", "reg-b"})
+	op, err := c.RemoveRegionFromNetwork(context.Background(), "n1", "reg-a")
 	if err != nil {
-		t.Fatalf("RemoveRegionsFromNetwork: %v", err)
+		t.Fatalf("RemoveRegionFromNetwork: %v", err)
 	}
 	if op.StatusURL == "" {
 		t.Errorf("expected non-empty StatusURL, got %+v", op)

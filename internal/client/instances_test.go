@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"testing"
 )
 
@@ -20,13 +21,15 @@ func TestAddInstances(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("expected POST, got %s", r.Method)
 			}
+			// Assert the raw wire shape so drift from the documented body is caught.
 			body, _ := io.ReadAll(r.Body)
-			var got CreateInstancesPayload
+			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			if got.InstanceType != "small" || len(got.RegionIDs) != 1 || got.RegionIDs[0] != "reg-a" {
-				t.Errorf("unexpected body: %+v", got)
+			want := map[string]any{"regionId": "reg-a", "idle": false}
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("body = %s, want %v", body, want)
 			}
 			_, _ = fmt.Fprint(w, `{"statusUrl":"https://example.test/status/add-i","samplingTime":1}`)
 		default:
@@ -35,8 +38,7 @@ func TestAddInstances(t *testing.T) {
 	})
 
 	op, err := c.AddInstances(context.Background(), "n1", CreateInstancesPayload{
-		InstanceType: "small",
-		RegionIDs:    []string{"reg-a"},
+		RegionID: "reg-a",
 	})
 	if err != nil {
 		t.Fatalf("AddInstances: %v", err)
@@ -55,16 +57,22 @@ func TestRemoveInstances(t *testing.T) {
 			if r.Method != http.MethodDelete {
 				t.Errorf("expected DELETE, got %s", r.Method)
 			}
+			// The API expects gateways nested under their region.
 			body, _ := io.ReadAll(r.Body)
-			var got RemoveInstancesPayload
+			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {
 				t.Fatalf("decode body: %v", err)
 			}
-			if len(got.RegionIDs) != 1 || got.RegionIDs[0] != "reg-a" {
-				t.Errorf("unexpected regionIds: %+v", got.RegionIDs)
+			want := map[string]any{
+				"regions": []any{
+					map[string]any{
+						"regionId":  "reg-a",
+						"instances": []any{map[string]any{"id": "i-1"}, map[string]any{"id": "i-2"}},
+					},
+				},
 			}
-			if len(got.InstanceIDs) != 2 || got.InstanceIDs[0] != "i-1" {
-				t.Errorf("unexpected instanceIds: %+v", got.InstanceIDs)
+			if !reflect.DeepEqual(got, want) {
+				t.Errorf("body = %s, want %v", body, want)
 			}
 			_, _ = fmt.Fprint(w, `{"statusUrl":"https://example.test/status/rm-i","samplingTime":1}`)
 		default:
@@ -72,10 +80,8 @@ func TestRemoveInstances(t *testing.T) {
 		}
 	})
 
-	op, err := c.RemoveInstances(context.Background(), "n1", RemoveInstancesPayload{
-		RegionIDs:   []string{"reg-a"},
-		InstanceIDs: []string{"i-1", "i-2"},
-	})
+	op, err := c.RemoveInstances(context.Background(), "n1",
+		NewRemoveInstancesPayload("reg-a", []string{"i-1", "i-2"}))
 	if err != nil {
 		t.Fatalf("RemoveInstances: %v", err)
 	}

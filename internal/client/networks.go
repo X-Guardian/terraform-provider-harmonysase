@@ -35,13 +35,13 @@ type NetworkRegion struct {
 	UpdatedAt string            `json:"updatedAt"`
 }
 
-// CreateRegionInNetworkPayload is the per-region body used both at network
-// create and when adding regions to an existing network.
+// CreateRegionInNetworkPayload is the per-region body used both at network create and when adding a region to an
+// existing network. The API declares `additionalProperties: false` on this object, so it must carry no fields beyond
+// these three.
 type CreateRegionInNetworkPayload struct {
 	HarmonySaseRegionID string `json:"harmonySaseRegionId"`
-	Idle                *bool  `json:"idle,omitempty"`
+	Idle                bool   `json:"idle"`
 	ScaleUnits          *int64 `json:"scaleUnits,omitempty"`
-	InstanceType        string `json:"instanceType,omitempty"`
 }
 
 // DeployNetworkPayload is the body for POST /networks/standard.
@@ -98,22 +98,22 @@ func (c *Client) DeleteNetwork(ctx context.Context, networkID string) (AsyncOper
 	return out, err
 }
 
-// AddRegionsToNetwork is async.
-func (c *Client) AddRegionsToNetwork(ctx context.Context, networkID string, regions []CreateRegionInNetworkPayload) (AsyncOperationResponse, error) {
+// AddRegionToNetwork is async. It adds a single region per call.
+func (c *Client) AddRegionToNetwork(ctx context.Context, networkID string, region CreateRegionInNetworkPayload) (AsyncOperationResponse, error) {
 	var out AsyncOperationResponse
-	_, err := c.do(ctx, "PUT", "/v2.3/networks/standard/"+networkID+"/regions", regions, &out)
+	_, err := c.do(ctx, "PUT", "/v2.3/networks/standard/"+networkID+"/regions", region, &out)
 	return out, err
 }
 
-// RemoveRegionsPayload is the body for DELETE .../regions.
-type RemoveRegionsPayload struct {
-	RegionIDs []string `json:"regionIds"`
+// RemoveRegionPayload is the body for DELETE .../regions. The endpoint removes one region per call.
+type RemoveRegionPayload struct {
+	RegionID string `json:"regionId"`
 }
 
-// RemoveRegionsFromNetwork is async.
-func (c *Client) RemoveRegionsFromNetwork(ctx context.Context, networkID string, regionIDs []string) (AsyncOperationResponse, error) {
+// RemoveRegionFromNetwork is async. Removing the last region also removes its gateways.
+func (c *Client) RemoveRegionFromNetwork(ctx context.Context, networkID, regionID string) (AsyncOperationResponse, error) {
 	var out AsyncOperationResponse
-	_, err := c.do(ctx, "DELETE", "/v2.3/networks/standard/"+networkID+"/regions", RemoveRegionsPayload{RegionIDs: regionIDs}, &out)
+	_, err := c.do(ctx, "DELETE", "/v2.3/networks/standard/"+networkID+"/regions", RemoveRegionPayload{RegionID: regionID}, &out)
 	return out, err
 }
 

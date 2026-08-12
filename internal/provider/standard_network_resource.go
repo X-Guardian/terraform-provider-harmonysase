@@ -227,32 +227,28 @@ func (r *networkResource) Create(ctx context.Context, req resource.CreateRequest
 		resp.Diagnostics.AddError("Failed to create network", err.Error())
 		return
 	}
-	resultRaw, err := r.client.WaitForOperation(ctx, op)
+	result, err := r.client.WaitForOperation(ctx, op)
 	if err != nil {
 		resp.Diagnostics.AddError("Network create did not complete", err.Error())
 		return
 	}
-	// The status `result` carries the created network object; we want its ID.
-	var result struct {
-		ID string `json:"id"`
-	}
-	if len(resultRaw) > 0 {
-		_ = jsonUnmarshal(resultRaw, &result)
-	}
-	if result.ID == "" {
+	// The status `result` carries `resource`: the API path of the created
+	// network. Its trailing segment is the network ID.
+	networkID := result.ResourceID()
+	if networkID == "" {
 		resp.Diagnostics.AddError(
 			"Could not determine network ID after create",
-			"The async status payload did not contain an `id` field. This is unexpected; please report it with provider trace logs.",
+			"The async status payload did not contain a `resource` path to derive the network ID from. This is unexpected; please report it with provider trace logs.",
 		)
 		return
 	}
 
-	if err := r.refreshState(ctx, &plan, result.ID); err != nil {
+	if err := r.refreshState(ctx, &plan, networkID); err != nil {
 		resp.Diagnostics.AddError("Failed to read network after create", err.Error())
 		return
 	}
 
-	tflog.Debug(ctx, "created harmonysase standard network", map[string]any{"id": result.ID})
+	tflog.Debug(ctx, "created harmonysase standard network", map[string]any{"id": networkID})
 	resp.Diagnostics.Append(resp.State.Set(ctx, &plan)...)
 }
 
@@ -474,11 +470,10 @@ func (r *networkResource) reconcileGatewayCount(ctx context.Context, networkID, 
 	case desired > current:
 		// API takes one regionId per POST and adds one gateway. Loop the
 		// difference. (If the API later supports a count, swap this out.)
-		instanceType := st.InstanceType.ValueString()
 		for i := int64(0); i < desired-current; i++ {
 			op, err := r.client.AddInstances(ctx, networkID, client.CreateInstancesPayload{
-				InstanceType: instanceType,
-				RegionIDs:    []string{regionID},
+				RegionID: regionID,
+				Idle:     st.Idle.ValueBool(),
 			})
 			if err != nil {
 				return fmt.Errorf("scale up (add gateway %d/%d): %w", i+1, desired-current, err)
@@ -495,10 +490,8 @@ func (r *networkResource) reconcileGatewayCount(ctx context.Context, networkID, 
 		_ = st.GatewayIDs.ElementsAs(ctx, &ids, false)
 		sort.Strings(ids)
 		toDelete := ids[len(ids)-int(current-desired):]
-		op, err := r.client.RemoveInstances(ctx, networkID, client.RemoveInstancesPayload{
-			RegionIDs:   []string{regionID},
-			InstanceIDs: toDelete,
-		})
+		op, err := r.client.RemoveInstances(ctx, networkID,
+			client.NewRemoveInstancesPayload(regionID, toDelete))
 		if err != nil {
 			return fmt.Errorf("scale down: %w", err)
 		}
@@ -521,12 +514,7 @@ func regionPayloadFromModel(m *initialRegionModel) client.CreateRegionInNetworkP
 		v := m.ScaleUnits.ValueInt64()
 		out.ScaleUnits = &v
 	}
-	if !m.Idle.IsNull() && !m.Idle.IsUnknown() {
-		v := m.Idle.ValueBool()
-		out.Idle = &v
-	}
-	if !m.InstanceType.IsNull() && !m.InstanceType.IsUnknown() && m.InstanceType.ValueString() != "" {
-		out.InstanceType = m.InstanceType.ValueString()
-	}
+	// `idle` is required by the API; a null/unknown config value sends false, matching the schema default.
+	out.Idle = m.Idle.ValueBool()
 	return out
 }

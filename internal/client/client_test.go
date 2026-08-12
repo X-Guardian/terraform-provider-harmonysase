@@ -4,7 +4,6 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -160,12 +159,12 @@ func TestPoller_HappyPathAndFail(t *testing.T) {
 		case "/api/rest/v2.3/networks/standard/status/ok":
 			n := atomic.AddInt32(&pollCount, 1)
 			if n < 2 {
-				_, _ = fmt.Fprint(w, `{"status":"pending"}`)
+				_, _ = fmt.Fprint(w, `{"completed":false}`)
 			} else {
-				_, _ = fmt.Fprint(w, `{"status":"completed","result":{"id":"n1"}}`)
+				_, _ = fmt.Fprint(w, `{"completed":true,"result":{"statusCode":201,"resource":"/v2.3/networks/standard/n1"}}`)
 			}
 		case "/api/rest/v2.3/networks/standard/status/bad":
-			_, _ = fmt.Fprint(w, `{"status":"failed","error":"region exhausted"}`)
+			_, _ = fmt.Fprint(w, `{"completed":true,"result":{"statusCode":422,"reason":["region exhausted"]}}`)
 		}
 	})
 
@@ -180,19 +179,82 @@ func TestPoller_HappyPathAndFail(t *testing.T) {
 	if err != nil {
 		t.Fatalf("happy path: %v", err)
 	}
-	var got struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(result, &got); err != nil {
-		t.Fatalf("decode result: %v", err)
-	}
-	if got.ID != "n1" {
-		t.Errorf("got id %q want n1", got.ID)
+	if got := result.ResourceID(); got != "n1" {
+		t.Errorf("got resource id %q want n1", got)
 	}
 
 	op.StatusURL = ts.URL + "/api/rest/v2.3/networks/standard/status/bad"
 	if _, err := c.WaitForOperation(ctx, op); err == nil || !strings.Contains(err.Error(), "region exhausted") {
 		t.Errorf("expected failure with reason, got %v", err)
+	}
+}
+
+// TestPoller_CompletedWithoutStatusField guards the terminal-state check. The payload signals completion with the
+// boolean `completed` and carries no `status` field, so a poller looking for one never terminates.
+func TestPoller_CompletedWithoutStatusField(t *testing.T) {
+	var pollCount int32
+	c, ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/auth/authorize" {
+			writeAuthResponse(w)
+			return
+		}
+		atomic.AddInt32(&pollCount, 1)
+		// A finished operation: no `status` key anywhere in the payload.
+		_, _ = fmt.Fprint(w, `{"completed":true,"result":{"statusCode":200}}`)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	op := AsyncOperationResponse{
+		StatusURL:    ts.URL + "/api/rest/v2.3/networks/status/Is4TrXRyL5",
+		SamplingTime: 15,
+	}
+	if _, err := c.WaitForOperation(ctx, op); err != nil {
+		t.Fatalf("expected immediate completion, got %v", err)
+	}
+	if got := atomic.LoadInt32(&pollCount); got != 1 {
+		t.Errorf("expected to stop after 1 poll, polled %d times", got)
+	}
+}
+
+// TestPoller_NoStatusURL covers endpoints documented as returning a bare
+// result envelope with no statusUrl on their 202 (network delete, region
+// add/remove, instance remove). There is nothing to poll, so this must be a
+// no-op rather than an error.
+func TestPoller_NoStatusURL(t *testing.T) {
+	c, _ := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/auth/authorize" {
+			writeAuthResponse(w)
+			return
+		}
+		t.Errorf("unexpected request to %s: nothing should be polled", r.URL.Path)
+	})
+
+	result, err := c.WaitForOperation(context.Background(), AsyncOperationResponse{})
+	if err != nil {
+		t.Fatalf("expected no-op, got %v", err)
+	}
+	if result.ResourceID() != "" {
+		t.Errorf("expected empty result, got %q", result.ResourceID())
+	}
+}
+
+func TestOperationResult_ResourceID(t *testing.T) {
+	cases := []struct {
+		resource string
+		want     string
+	}{
+		{"/v2.3/networks/standard/n1/tunnels/wireguard/EVfxqQjn8K", "EVfxqQjn8K"},
+		{"/v2.3/networks/standard/n1/tunnels/wireguard/EVfxqQjn8K/", "EVfxqQjn8K"},
+		{"EVfxqQjn8K", "EVfxqQjn8K"},
+		{"", ""},
+		{"/", ""},
+	}
+	for _, tc := range cases {
+		if got := (OperationResult{Resource: tc.resource}).ResourceID(); got != tc.want {
+			t.Errorf("ResourceID(%q) = %q, want %q", tc.resource, got, tc.want)
+		}
 	}
 }
 
@@ -203,7 +265,7 @@ func TestPoller_ContextCancel(t *testing.T) {
 			_, _ = fmt.Fprintf(w, `{"data":{"tokenType":"bearer","accessToken":"tok","accessTokenExpire":%q}}`, expiry)
 			return
 		}
-		_, _ = fmt.Fprint(w, `{"status":"pending"}`)
+		_, _ = fmt.Fprint(w, `{"completed":false}`)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
@@ -225,7 +287,7 @@ func TestPoller_RelativeStatusURL(t *testing.T) {
 			expiry := time.Now().Add(30 * time.Minute).UTC().Format(time.RFC3339)
 			_, _ = fmt.Fprintf(w, `{"data":{"tokenType":"bearer","accessToken":"tok","accessTokenExpire":%q}}`, expiry)
 		case "/api/rest/v2.3/networks/standard/status/abc":
-			_, _ = fmt.Fprint(w, `{"status":"completed"}`)
+			_, _ = fmt.Fprint(w, `{"completed":true}`)
 		default:
 			http.NotFound(w, r)
 		}
