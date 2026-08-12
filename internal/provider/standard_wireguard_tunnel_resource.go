@@ -140,29 +140,18 @@ func (r *wireguardTunnelResource) Create(ctx context.Context, req resource.Creat
 		resp.Diagnostics.AddError("Failed to create tunnel", err.Error())
 		return
 	}
-	resultRaw, err := r.client.WaitForOperation(ctx, op)
+	result, err := r.client.WaitForOperation(ctx, op)
 	if err != nil {
 		resp.Diagnostics.AddError("Tunnel create did not complete", err.Error())
 		return
 	}
-	// The async result envelope carries the tunnel object. Field name observed
-	// as `tunnelID` on the standalone GET; the create result may use that or a
-	// generic `id` — accept either.
-	var result struct {
-		TunnelID string `json:"tunnelID"`
-		ID       string `json:"id"`
-	}
-	if len(resultRaw) > 0 {
-		_ = jsonUnmarshal(resultRaw, &result)
-	}
-	id := result.TunnelID
-	if id == "" {
-		id = result.ID
-	}
+	// The async result envelope carries `resource`: the API path of the new
+	// tunnel. Its trailing segment is the tunnel ID.
+	id := result.ResourceID()
 	if id == "" {
 		resp.Diagnostics.AddError(
 			"Could not determine tunnel ID after create",
-			"The async status payload did not contain a `tunnelID` or `id` field.",
+			"The async status payload did not contain a `resource` path to derive the tunnel ID from.",
 		)
 		return
 	}

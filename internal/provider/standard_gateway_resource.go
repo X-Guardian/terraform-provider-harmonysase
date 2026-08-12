@@ -160,19 +160,14 @@ func (r *gatewayResource) Create(ctx context.Context, req resource.CreateRequest
 	var newGatewayID string
 	if existingRegion == nil {
 		// Region not attached → PUT /regions creates the region AND its first
-		// gateway in one step.
-		idle := plan.Idle.ValueBool()
-		var instanceType string
-		if !plan.InstanceType.IsNull() && !plan.InstanceType.IsUnknown() {
-			instanceType = plan.InstanceType.ValueString()
-		}
+		// gateway in one step. The API takes no instance type here; the
+		// attribute is computed back from the created gateway.
 		one := int64(1)
-		op, err := r.client.AddRegionsToNetwork(ctx, networkID, []client.CreateRegionInNetworkPayload{{
+		op, err := r.client.AddRegionToNetwork(ctx, networkID, client.CreateRegionInNetworkPayload{
 			HarmonySaseRegionID: want,
 			ScaleUnits:          &one,
-			Idle:                &idle,
-			InstanceType:        instanceType,
-		}})
+			Idle:                plan.Idle.ValueBool(),
+		})
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to attach region", err.Error())
 			return
@@ -203,13 +198,11 @@ func (r *gatewayResource) Create(ctx context.Context, req resource.CreateRequest
 			before[ins.ID] = struct{}{}
 		}
 
-		instanceType := plan.InstanceType.ValueString()
-		if instanceType == "" && len(existingRegion.Instances) > 0 {
-			instanceType = existingRegion.Instances[0].InstanceType
-		}
+		// The gateway inherits its instance type from the region; the API
+		// accepts no instance type on this call.
 		op, err := r.client.AddInstances(ctx, networkID, client.CreateInstancesPayload{
-			InstanceType: instanceType,
-			RegionIDs:    []string{existingRegion.ID},
+			RegionID: existingRegion.ID,
+			Idle:     plan.Idle.ValueBool(),
 		})
 		if err != nil {
 			resp.Diagnostics.AddError("Failed to add gateway", err.Error())
@@ -309,10 +302,8 @@ func (r *gatewayResource) Delete(ctx context.Context, req resource.DeleteRequest
 		regionID = ins.Region
 	}
 
-	op, err := r.client.RemoveInstances(ctx, networkID, client.RemoveInstancesPayload{
-		RegionIDs:   []string{regionID},
-		InstanceIDs: []string{gatewayID},
-	})
+	op, err := r.client.RemoveInstances(ctx, networkID,
+		client.NewRemoveInstancesPayload(regionID, []string{gatewayID}))
 	if err != nil {
 		if client.IsNotFound(err) {
 			return
@@ -343,7 +334,7 @@ func (r *gatewayResource) Delete(ctx context.Context, req resource.DeleteRequest
 		if len(net.Regions[i].Instances) == 0 {
 			initial := oldestRegion(net.Regions)
 			if initial == nil || initial.ID != regionID {
-				rmOp, err := r.client.RemoveRegionsFromNetwork(ctx, networkID, []string{regionID})
+				rmOp, err := r.client.RemoveRegionFromNetwork(ctx, networkID, regionID)
 				if err != nil {
 					resp.Diagnostics.AddWarning("Failed to remove empty region after gateway delete", err.Error())
 					return

@@ -29,23 +29,49 @@ type NetworkTunnel struct {
 	Type string `json:"type"`
 }
 
-// CreateInstancesPayload is the body for POST /instances.
+// CreateInstancesPayload is the body for POST /instances. The endpoint adds a
+// single gateway to one region per call; callers scaling by more than one must
+// loop. Note the API takes no instance type here — the gateway inherits it
+// from the region.
 type CreateInstancesPayload struct {
-	InstanceType string   `json:"instanceType"`
-	RegionIDs    []string `json:"regionIds"`
+	RegionID string `json:"regionId"`
+	Idle     bool   `json:"idle"`
 }
 
-// AddInstances is async.
+// AddInstances is async. It adds one gateway to the payload's region.
 func (c *Client) AddInstances(ctx context.Context, networkID string, body CreateInstancesPayload) (AsyncOperationResponse, error) {
 	var out AsyncOperationResponse
 	_, err := c.do(ctx, "POST", "/v2.3/networks/standard/"+networkID+"/instances", body, &out)
 	return out, err
 }
 
-// RemoveInstancesPayload is the body for DELETE /instances.
+// RemoveInstancesPayload is the body for DELETE /instances. Gateways are
+// addressed as a nested list grouped by region.
 type RemoveInstancesPayload struct {
-	RegionIDs   []string `json:"regionIds"`
-	InstanceIDs []string `json:"instanceIds,omitempty"`
+	Regions []RemoveInstancesRegion `json:"regions"`
+}
+
+// RemoveInstancesRegion names one region and the gateways to remove from it.
+type RemoveInstancesRegion struct {
+	RegionID  string                    `json:"regionId"`
+	Instances []RemoveInstancesInstance `json:"instances,omitempty"`
+}
+
+// RemoveInstancesInstance identifies a single gateway to remove.
+type RemoveInstancesInstance struct {
+	ID string `json:"id"`
+}
+
+// NewRemoveInstancesPayload builds the nested removal body for a set of
+// gateway IDs within a single region.
+func NewRemoveInstancesPayload(regionID string, instanceIDs []string) RemoveInstancesPayload {
+	instances := make([]RemoveInstancesInstance, 0, len(instanceIDs))
+	for _, id := range instanceIDs {
+		instances = append(instances, RemoveInstancesInstance{ID: id})
+	}
+	return RemoveInstancesPayload{
+		Regions: []RemoveInstancesRegion{{RegionID: regionID, Instances: instances}},
+	}
 }
 
 // RemoveInstances is async.
