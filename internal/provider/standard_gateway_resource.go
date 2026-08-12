@@ -159,9 +159,8 @@ func (r *gatewayResource) Create(ctx context.Context, req resource.CreateRequest
 
 	var newGatewayID string
 	if existingRegion == nil {
-		// Region not attached → PUT /regions creates the region AND its first
-		// gateway in one step. The API takes no instance type here; the
-		// attribute is computed back from the created gateway.
+		// Region not attached → PUT /regions creates the region AND its first gateway in one step. instance_type is
+		// computed back from the created gateway.
 		one := int64(1)
 		op, err := r.client.AddRegionToNetwork(ctx, networkID, client.CreateRegionInNetworkPayload{
 			HarmonySaseRegionID: want,
@@ -198,8 +197,6 @@ func (r *gatewayResource) Create(ctx context.Context, req resource.CreateRequest
 			before[ins.ID] = struct{}{}
 		}
 
-		// The gateway inherits its instance type from the region; the API
-		// accepts no instance type on this call.
 		op, err := r.client.AddInstances(ctx, networkID, client.CreateInstancesPayload{
 			RegionID: existingRegion.ID,
 			Idle:     plan.Idle.ValueBool(),

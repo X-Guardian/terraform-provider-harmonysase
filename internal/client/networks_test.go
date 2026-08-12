@@ -120,8 +120,8 @@ func TestAddRegionToNetwork(t *testing.T) {
 			if r.Method != http.MethodPut {
 				t.Errorf("expected PUT, got %s", r.Method)
 			}
-			// The endpoint takes a single region object, not an array, and
-			// declares additionalProperties:false — so assert the exact shape.
+			// The endpoint takes a single region object and declares additionalProperties:false, so assert the
+			// exact shape.
 			body, _ := io.ReadAll(r.Body)
 			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {

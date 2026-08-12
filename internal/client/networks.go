@@ -35,10 +35,9 @@ type NetworkRegion struct {
 	UpdatedAt string            `json:"updatedAt"`
 }
 
-// CreateRegionInNetworkPayload is the per-region body used both at network
-// create and when adding a region to an existing network. The API declares
-// `additionalProperties: false` on this object, so it must carry no fields
-// beyond these three; `idle` is required rather than optional.
+// CreateRegionInNetworkPayload is the per-region body used both at network create and when adding a region to an
+// existing network. The API declares `additionalProperties: false` on this object, so it must carry no fields beyond
+// these three.
 type CreateRegionInNetworkPayload struct {
 	HarmonySaseRegionID string `json:"harmonySaseRegionId"`
 	Idle                bool   `json:"idle"`
@@ -99,22 +98,19 @@ func (c *Client) DeleteNetwork(ctx context.Context, networkID string) (AsyncOper
 	return out, err
 }
 
-// AddRegionToNetwork is async. The endpoint takes a single region object per
-// call, not a list.
+// AddRegionToNetwork is async. It adds a single region per call.
 func (c *Client) AddRegionToNetwork(ctx context.Context, networkID string, region CreateRegionInNetworkPayload) (AsyncOperationResponse, error) {
 	var out AsyncOperationResponse
 	_, err := c.do(ctx, "PUT", "/v2.3/networks/standard/"+networkID+"/regions", region, &out)
 	return out, err
 }
 
-// RemoveRegionPayload is the body for DELETE .../regions. The endpoint removes
-// one region per call.
+// RemoveRegionPayload is the body for DELETE .../regions. The endpoint removes one region per call.
 type RemoveRegionPayload struct {
 	RegionID string `json:"regionId"`
 }
 
-// RemoveRegionFromNetwork is async. Removing the last region also removes its
-// gateways.
+// RemoveRegionFromNetwork is async. Removing the last region also removes its gateways.
 func (c *Client) RemoveRegionFromNetwork(ctx context.Context, networkID, regionID string) (AsyncOperationResponse, error) {
 	var out AsyncOperationResponse
 	_, err := c.do(ctx, "DELETE", "/v2.3/networks/standard/"+networkID+"/regions", RemoveRegionPayload{RegionID: regionID}, &out)

@@ -21,8 +21,7 @@ func TestAddInstances(t *testing.T) {
 			if r.Method != http.MethodPost {
 				t.Errorf("expected POST, got %s", r.Method)
 			}
-			// Assert the raw wire shape rather than round-tripping through
-			// our own struct, so a drift from the documented body is caught.
+			// Assert the raw wire shape so drift from the documented body is caught.
 			body, _ := io.ReadAll(r.Body)
 			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {
@@ -58,8 +57,7 @@ func TestRemoveInstances(t *testing.T) {
 			if r.Method != http.MethodDelete {
 				t.Errorf("expected DELETE, got %s", r.Method)
 			}
-			// The API expects gateways nested under their region, not two
-			// parallel ID lists. Assert the raw shape.
+			// The API expects gateways nested under their region.
 			body, _ := io.ReadAll(r.Body)
 			var got map[string]any
 			if err := json.Unmarshal(body, &got); err != nil {

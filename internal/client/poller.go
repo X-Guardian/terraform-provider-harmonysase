@@ -19,10 +19,9 @@ type AsyncOperationResponse struct {
 	SamplingTime int    `json:"samplingTime"`
 }
 
-// asyncOperationStatus is the GET /status/{id} response. The API signals
-// terminal state with the boolean `completed`; success or failure of the
-// underlying operation is carried by result.statusCode, with human-readable
-// causes in result.reason.
+// asyncOperationStatus is the GET /status/{id} response. The API signals terminal state with the boolean `completed`;
+// success or failure of the underlying operation is carried by result.statusCode, with human-readable causes in
+// result.reason.
 type asyncOperationStatus struct {
 	Completed bool                 `json:"completed"`
 	Result    asyncOperationResult `json:"result,omitempty"`
@@ -36,9 +35,8 @@ type asyncOperationResult struct {
 	raw        json.RawMessage `json:"-"`
 }
 
-// UnmarshalJSON keeps the raw payload alongside the decoded fields so callers
-// that need operation-specific data (e.g. the created tunnel object) can decode
-// it themselves.
+// UnmarshalJSON keeps the raw payload alongside the decoded fields so callers that need operation-specific data
+// (e.g. the created tunnel object) can decode it themselves.
 func (r *asyncOperationResult) UnmarshalJSON(b []byte) error {
 	type alias asyncOperationResult
 	var a alias
@@ -58,16 +56,15 @@ const (
 
 // OperationResult is the outcome of a completed async operation.
 type OperationResult struct {
-	// Resource is the API path of the affected resource, if the operation
-	// created or modified one. Empty for operations that address no resource.
+	// Resource is the API path of the affected resource, if the operation created or modified one. Empty for
+	// operations that address no resource.
 	Resource string
 	// Raw is the undecoded `result` payload, for callers needing more.
 	Raw json.RawMessage
 }
 
-// ResourceID returns the trailing path segment of Resource, which for create
-// operations is the ID of the newly created resource. Returns "" if Resource
-// is empty.
+// ResourceID returns the trailing path segment of Resource, which for create operations is the ID of the newly
+// created resource. Returns "" if Resource is empty.
 func (r OperationResult) ResourceID() string {
 	trimmed := strings.TrimRight(r.Resource, "/")
 	if trimmed == "" {
@@ -79,19 +76,16 @@ func (r OperationResult) ResourceID() string {
 	return trimmed
 }
 
-// WaitForOperation polls the given async operation until it reaches a terminal
-// state (completed or failed) or ctx is cancelled. The op's StatusURL is the
-// fully-qualified URL returned by the API; SamplingTime is interpreted as
-// seconds and clamped to [minPollInterval, maxPollInterval].
+// WaitForOperation polls the given async operation until it reaches a terminal state (completed or failed) or ctx is
+// cancelled. The op's StatusURL is the fully-qualified URL returned by the API; SamplingTime is interpreted as seconds
+// and clamped to [minPollInterval, maxPollInterval].
 //
-// On success, the operation's result envelope is returned; for create
-// operations its ResourceID is the new resource's ID.
+// On success, the operation's result envelope is returned; for create operations its ResourceID is the new resource's
+// ID.
 //
-// An empty StatusURL means the endpoint completed synchronously rather than
-// handing back an operation to track, so there is nothing to poll and a zero
-// result is returned. Several endpoints are documented as returning a bare
-// result envelope with no statusUrl on their 202, so callers must not treat
-// this as an error.
+// An empty StatusURL means the endpoint completed synchronously: there is nothing to poll, and a zero result is
+// returned. Several endpoints are documented as returning a bare result envelope with no statusUrl on their 202, so
+// this is not an error.
 func (c *Client) WaitForOperation(ctx context.Context, op AsyncOperationResponse) (OperationResult, error) {
 	if op.StatusURL == "" {
 		tflog.Debug(ctx, "harmonysase operation returned no statusUrl; treating as already complete", nil)
@@ -147,9 +141,8 @@ func (c *Client) WaitForOperation(ctx context.Context, op AsyncOperationResponse
 				"elapsed":     time.Since(start).String(),
 				"status_code": st.Result.StatusCode,
 			})
-			// A completed operation still reports its own success or failure via
-			// the HTTP-style status code in the result envelope. Treat a zero
-			// code as success: some operations return an empty result body.
+			// A completed operation still reports its own success or failure via the HTTP-style status code in the
+			// result envelope. Treat a zero code as success: some operations return an empty result body.
 			if code := st.Result.StatusCode; code != 0 && (code < 200 || code > 299) {
 				msg := strings.Join(st.Result.Reason, "; ")
 				if msg == "" {

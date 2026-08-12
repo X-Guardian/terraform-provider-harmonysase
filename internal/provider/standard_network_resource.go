@@ -470,7 +470,6 @@ func (r *networkResource) reconcileGatewayCount(ctx context.Context, networkID, 
 	case desired > current:
 		// API takes one regionId per POST and adds one gateway. Loop the
 		// difference. (If the API later supports a count, swap this out.)
-		// Gateways inherit their instance type from the region.
 		for i := int64(0); i < desired-current; i++ {
 			op, err := r.client.AddInstances(ctx, networkID, client.CreateInstancesPayload{
 				RegionID: regionID,
@@ -515,9 +514,7 @@ func regionPayloadFromModel(m *initialRegionModel) client.CreateRegionInNetworkP
 		v := m.ScaleUnits.ValueInt64()
 		out.ScaleUnits = &v
 	}
-	// `idle` is required by the API; a null/unknown config value sends false,
-	// matching the schema default. `instance_type` is not accepted on create —
-	// it is computed back from the gateways the API provisions.
+	// `idle` is required by the API; a null/unknown config value sends false, matching the schema default.
 	out.Idle = m.Idle.ValueBool()
 	return out
 }

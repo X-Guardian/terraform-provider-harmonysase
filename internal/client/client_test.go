@@ -189,11 +189,8 @@ func TestPoller_HappyPathAndFail(t *testing.T) {
 	}
 }
 
-// TestPoller_CompletedWithoutStatusField is a regression test for the poller
-// having previously looked for a string `status` field that the API never
-// sends. The real payload signals terminal state with the boolean `completed`
-// only, so an operation that finished immediately was polled forever until the
-// Terraform operation timed out.
+// TestPoller_CompletedWithoutStatusField guards the terminal-state check. The payload signals completion with the
+// boolean `completed` and carries no `status` field, so a poller looking for one never terminates.
 func TestPoller_CompletedWithoutStatusField(t *testing.T) {
 	var pollCount int32
 	c, ts := newTestServer(t, func(w http.ResponseWriter, r *http.Request) {
@@ -202,8 +199,7 @@ func TestPoller_CompletedWithoutStatusField(t *testing.T) {
 			return
 		}
 		atomic.AddInt32(&pollCount, 1)
-		// Exactly what the API returns for a finished tunnel update: no
-		// `status` key anywhere in the payload.
+		// A finished operation: no `status` key anywhere in the payload.
 		_, _ = fmt.Fprint(w, `{"completed":true,"result":{"statusCode":200}}`)
 	})
 
